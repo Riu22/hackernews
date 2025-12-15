@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hacker News</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background-color: #f6f6ef;
+            color: #000;
+        }
+
+        header {
+            background-color: #ff6600;
+            padding: 0.5rem 1rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        header h1 {
+            color: #000;
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+
+        main {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 1rem;
+        }
+
+        #stories {
+            background-color: #fff;
+        }
+
+        .story {
+            padding: 1rem;
+            border-bottom: 1px solid #e5e5e5;
+            display: flex;
+            gap: 1rem;
+        }
+
+        .story:hover {
+            background-color: #f9f9f9;
+        }
+
+        .story-number {
+            color: #828282;
+            font-weight: bold;
+            min-width: 2rem;
+        }
+
+        .story-content {
+            flex: 1;
+        }
+
+        .story-title {
+            font-size: 1.1rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .story-title a {
+            color: #000;
+            text-decoration: none;
+        }
+
+        .story-title a:hover {
+            color: #ff6600;
+        }
+
+        .story-meta {
+            font-size: 0.875rem;
+            color: #828282;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .story-meta a {
+            color: #828282;
+            text-decoration: none;
+        }
+
+        .story-meta a:hover {
+            text-decoration: underline;
+        }
+
+        #load-more-container {
+            text-align: center;
+            padding: 2rem;
+        }
+
+        #load-more-btn {
+            background-color: #ff6600;
+            color: #fff;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            font-size: 1rem;
+            cursor: pointer;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+
+        #load-more-btn:hover:not(:disabled) {
+            background-color: #e65c00;
+        }
+
+        #load-more-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .end-message {
+            text-align: center;
+            padding: 2rem;
+            color: #828282;
+            font-size: 1rem;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Hacker News</h1>
+    </header>
+
+    <main>
+        <div id="stories"></div>
+
+        <div id="load-more-container" class="hidden">
+            <button id="load-more-btn">
+                Carrega'n 10 més (<span id="progress">0/0</span>)
+            </button>
+        </div>
+
+        <div id="end-message" class="end-message hidden">
+            Has arribat al final de les stories disponibles
+        </div>
+    </main>
+
+    <script>
+        const STORIES_PER_PAGE = 10;
+        const MAX_STORIES = 500;
+        
+        let storyIds = [];
+        let currentIndex = 0;
+
+        async function fetchTopStoryIds() {
+            try {
+                const response = await fetch('https://hacker-news.firebaseio.com/v0/topstories.json');
+                const ids = await response.json();
+                storyIds = ids.slice(0, MAX_STORIES);
+                await loadStories(false);
+            } catch (error) {
+                console.error('Error fetching story IDs:', error);
+            }
+        }
+
+        async function loadStories(isLoadingMore) {
+            const loadMoreBtn = document.getElementById('load-more-btn');
+            
+            if (isLoadingMore) {
+                loadMoreBtn.disabled = true;
+                loadMoreBtn.innerHTML = '<span class="spinner"></span> <span style="margin-left: 0.5rem;">Carregant...</span>';
+            }
+
+            const startIndex = currentIndex;
+            const endIndex = Math.min(currentIndex + STORIES_PER_PAGE, storyIds.length);
+            const idsToFetch = storyIds.slice(startIndex, endIndex);
+
+            try {
+                const storyPromises = idsToFetch.map(id =>
+                    fetch(`https://hacker-news.firebaseio.com/v0/item/${id}.json`).then(res => res.json())
+                );
+                const stories = await Promise.all(storyPromises);
+                
+                const storiesContainer = document.getElementById('stories');
+                
+                stories.forEach((story, index) => {
+                    const storyElement = createStoryElement(story, startIndex + index + 1);
+                    storiesContainer.appendChild(storyElement);
+                });
+
+                currentIndex = endIndex;
+                
+                updateLoadMoreButton();
+                
+            } catch (error) {
+                console.error('Error loading stories:', error);
+            }
+        }
+
+        function createStoryElement(story, number) {
+            const article = document.createElement('article');
+            article.className = 'story';
+            
+            const storyUrl = story.url || `https://news.ycombinator.com/item?id=${story.id}`;
+            const commentsUrl = `https://news.ycombinator.com/item?id=${story.id}`;
+            const authorUrl = `https://news.ycombinator.com/user?id=${story.by}`;
+            const formattedDate = formatDate(story.time);
+            const commentCount = story.descendants || 0;
+            
+            article.innerHTML = `
+                <div class="story-number">${number}.</div>
+                <div class="story-content">
+                    <div class="story-title">
+                        <a href="${storyUrl}" target="_blank" rel="noopener noreferrer">${story.title}</a>
+                    </div>
+                    <div class="story-meta">
+                        <span>${story.score} punts</span>
+                        <span>per <a href="${authorUrl}" target="_blank" rel="noopener noreferrer">${story.by}</a></span>
+                        <span>${formattedDate}</span>
+                        <span><a href="${commentsUrl}" target="_blank" rel="noopener noreferrer">${commentCount} comentaris</a></span>
+                    </div>
+                </div>
+            `;
+            
+            return article;
+        }
+
+        function formatDate(timestamp) {
+            const date = new Date(timestamp * 1000);
+            return date.toLocaleString('ca-ES', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        function updateLoadMoreButton() {
+            const loadMoreContainer = document.getElementById('load-more-container');
+            const loadMoreBtn = document.getElementById('load-more-btn');
+            const endMessage = document.getElementById('end-message');
+            
+            if (currentIndex >= Math.min(storyIds.length, MAX_STORIES)) {
+                loadMoreContainer.classList.add('hidden');
+                endMessage.classList.remove('hidden');
+            } else {
+                loadMoreContainer.classList.remove('hidden');
+                loadMoreBtn.disabled = false;
+                loadMoreBtn.innerHTML = `Carrega'n 10 més (<span id="progress">${currentIndex}/${Math.min(storyIds.length, MAX_STORIES)}</span>)`;
+            }
+        }
+
+        document.getElementById('load-more-btn').addEventListener('click', () => {
+            loadStories(true);
+        });
+
+        fetchTopStoryIds();
+    </script>
+</body>
+</html>
